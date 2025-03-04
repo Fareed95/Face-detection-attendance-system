@@ -1,7 +1,6 @@
 '''
-Main file to recognize the faces of the users which are in the databases
+Main file to recognize the faces of the users which are in the database
 '''
-
 
 import face_recognition
 import cv2
@@ -45,18 +44,17 @@ load_faces_from_csv(CSV_FILE)
 def upload_and_recognize():
     root = tk.Tk()
     root.withdraw()
-    file_path = 'test/fareednitin.jpg'
+    file_path = 'test/hamsab.jpg'
 
     if not file_path:
         print("No file selected!")
         return
 
     uploaded_image = face_recognition.load_image_file(file_path)
-
     frame = cv2.imread(file_path)
 
     '''
-    screen sizing as per my laptop screen
+    Screen sizing as per my laptop screen
     '''
     screen_width = 800  
     screen_height = 600  
@@ -81,7 +79,13 @@ def upload_and_recognize():
 
         face_names.append(name)
 
-# scaling
+    # Print the detected face names in the terminal
+    if face_names:
+        print("Detected Faces:", ", ".join(face_names))
+    else:
+        print("No known faces detected!")
+
+    # Scaling
     scale_x = new_w / w
     scale_y = new_h / h
 
@@ -92,7 +96,7 @@ def upload_and_recognize():
         left = int(left * scale_x)
 
         '''
-        finding the faces and making it rtectangle
+        Finding the faces and drawing rectangles
         '''
         cv2.rectangle(frame_resized, (left, top), (right, bottom), (0, 0, 255), 2)
         cv2.rectangle(frame_resized, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
@@ -100,7 +104,6 @@ def upload_and_recognize():
         cv2.putText(frame_resized, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
 
     '''
-
     Final screen
     '''
     cv2.imshow("Uploaded Image", frame_resized)
