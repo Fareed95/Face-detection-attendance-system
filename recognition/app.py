@@ -1,26 +1,48 @@
+'''
+Main file to recognize the faces of the users which are in the databases
+'''
+
+
 import face_recognition
 import cv2
 import numpy as np
 import tkinter as tk
 from tkinter import filedialog
+import csv
 
-# Load known faces and their names
+# Paths
+CSV_FILE = "Data/dataset.csv"  # Path to your CSV file
+
+# Load known faces and their names from CSV
 known_face_encodings = []
 known_face_names = []
 
-# Load a sample picture and learn how to recognize it.
-nitin_image = face_recognition.load_image_file("images/nitin.jpg")
-nitin_face_encoding = face_recognition.face_encodings(nitin_image)[0]
-known_face_encodings.append(nitin_face_encoding)
-known_face_names.append("Nitin")
+def load_faces_from_csv(csv_file):
+    try:
+        with open(csv_file, newline='') as file:
+            reader = csv.reader(file)
+            for row in reader:
+                if len(row) < 2:
+                    print(f"Skipping invalid row: {row}")
+                    continue
+                image_path, name = row
+                try:
+                    image = face_recognition.load_image_file(image_path)
+                    encoding = face_recognition.face_encodings(image)
+                    if encoding:
+                        known_face_encodings.append(encoding[0])
+                        known_face_names.append(name.strip())
+                    else:
+                        print(f"Warning: No face found in {image_path}")
+                except Exception as e:
+                    print(f"Error loading {image_path}: {e}")
+    except FileNotFoundError:
+        print(f"CSV file '{csv_file}' not found!")
 
-zaid_image = face_recognition.load_image_file("images/zaid.jpg")
-zaid_face_encoding = face_recognition.face_encodings(zaid_image)[0]
-known_face_encodings.append(zaid_face_encoding)
-known_face_names.append("Zaid")
+# Load faces from the CSV file
+load_faces_from_csv(CSV_FILE)
 
 def upload_and_recognize():
-    # Open file dialog to select an image
     root = tk.Tk()
     root.withdraw()
     file_path = filedialog.askopenfilename()
@@ -29,22 +51,21 @@ def upload_and_recognize():
         print("No file selected!")
         return
 
-    # Load the uploaded image
     uploaded_image = face_recognition.load_image_file(file_path)
-    
-    # Convert to OpenCV format for display
+
     frame = cv2.imread(file_path)
 
-    # Resize image for better display (keeping aspect ratio)
-    screen_width = 800  # Adjust based on your screen
-    screen_height = 600  # Adjust based on your screen
+    '''
+    screen sizing as per my laptop screen
+    '''
+    screen_width = 800  
+    screen_height = 600  
     h, w, _ = frame.shape
     scaling_factor = min(screen_width / w, screen_height / h)
     new_w = int(w * scaling_factor)
     new_h = int(h * scaling_factor)
     frame_resized = cv2.resize(frame, (new_w, new_h))
 
-    # Find all the faces and face encodings in the uploaded image
     face_locations = face_recognition.face_locations(uploaded_image)
     face_encodings = face_recognition.face_encodings(uploaded_image, face_locations)
 
@@ -60,7 +81,7 @@ def upload_and_recognize():
 
         face_names.append(name)
 
-    # Adjust face location scaling based on resized image
+# scaling
     scale_x = new_w / w
     scale_y = new_h / h
 
@@ -70,13 +91,18 @@ def upload_and_recognize():
         bottom = int(bottom * scale_y)
         left = int(left * scale_x)
 
-        # Draw a box around the face
+        '''
+        finding the faces and making it rtectangle
+        '''
         cv2.rectangle(frame_resized, (left, top), (right, bottom), (0, 0, 255), 2)
         cv2.rectangle(frame_resized, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
         font = cv2.FONT_HERSHEY_DUPLEX
         cv2.putText(frame_resized, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
 
-    # Show the resized image
+    '''
+
+    Final screen
+    '''
     cv2.imshow("Uploaded Image", frame_resized)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
