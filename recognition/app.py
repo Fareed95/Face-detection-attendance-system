@@ -45,7 +45,7 @@ load_faces_from_csv(CSV_FILE)
 def upload_and_recognize():
     root = tk.Tk()
     root.withdraw()
-    file_path = filedialog.askopenfilename()
+    file_path = 'test/fareednitin.jpg'
 
     if not file_path:
         print("No file selected!")
