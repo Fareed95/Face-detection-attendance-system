@@ -6,8 +6,8 @@ import face_recognition
 import cv2
 import numpy as np
 import tkinter as tk
-# from tkinter import filedialog
 import csv
+import os
 
 # Paths
 CSV_FILE = "Data/dataset.csv"  # Path to your CSV file
@@ -20,21 +20,26 @@ def load_faces_from_csv(csv_file):
     try:
         with open(csv_file, newline='') as file:
             reader = csv.reader(file)
+            next(reader)
             for row in reader:
                 if len(row) < 2:
                     print(f"Skipping invalid row: {row}")
                     continue
-                image_path, name = row
-                try:
-                    image = face_recognition.load_image_file(image_path)
-                    encoding = face_recognition.face_encodings(image)
-                    if encoding:
-                        known_face_encodings.append(encoding[0])
-                        known_face_names.append(name.strip())
-                    else:
-                        print(f"Warning: No face found in {image_path}")
-                except Exception as e:
-                    print(f"Error loading {image_path}: {e}")
+                
+                name = row[0].strip()
+                image_paths = [path.strip() for path in row[1:] if path.strip()]
+                
+                for image_path in image_paths:
+                    try:
+                        image = face_recognition.load_image_file(image_path)
+                        encoding = face_recognition.face_encodings(image)
+                        if encoding:
+                            known_face_encodings.append(encoding[0])
+                            known_face_names.append(name)
+                        else:
+                            print(f"Warning: No face found in {image_path}")
+                    except Exception as e:
+                        print(f"Error loading {image_path}: {e}")
     except FileNotFoundError:
         print(f"CSV file '{csv_file}' not found!")
 
@@ -44,7 +49,7 @@ load_faces_from_csv(CSV_FILE)
 def upload_and_recognize():
     root = tk.Tk()
     root.withdraw()
-    file_path = 'test/test5.jpg'
+    file_path = 'test/fareedtesting.jpg'
     if not file_path:
         print("No file selected!")
         return
@@ -72,9 +77,10 @@ def upload_and_recognize():
         name = "Unknown"
 
         face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
-        best_match_index = np.argmin(face_distances)
-        if matches[best_match_index]:
-            name = known_face_names[best_match_index]
+        if len(face_distances) > 0:
+            best_match_index = np.argmin(face_distances)
+            if matches[best_match_index]:
+                name = known_face_names[best_match_index]
 
         face_names.append(name)
 
