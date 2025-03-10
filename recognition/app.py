@@ -6,7 +6,7 @@ import face_recognition
 import cv2
 import numpy as np
 import tkinter as tk
-from tkinter import filedialog
+# from tkinter import filedialog
 import csv
 
 # Paths
@@ -44,8 +44,7 @@ load_faces_from_csv(CSV_FILE)
 def upload_and_recognize():
     root = tk.Tk()
     root.withdraw()
-    file_path = 'test/hamsab.jpg'
-
+    file_path = 'test/test5.jpg'
     if not file_path:
         print("No file selected!")
         return
