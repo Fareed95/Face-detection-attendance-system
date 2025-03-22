@@ -89,5 +89,5 @@ def upload_and_recognize(test_image):
 
     
 if __name__ == "__main__":
-    faces = upload_and_recognize("test/fareednitin.jpg")
+    faces = upload_and_recognize("test/testtindata11.jpg")
     print(faces)
