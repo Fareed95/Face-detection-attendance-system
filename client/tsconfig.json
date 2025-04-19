@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "src/app/(routes)/layout.jsx", "src/components/ui/navbar-menu.jsx", "src/components/dashboard/mentor/SessionCalendar.jsx", "src/components/dashboard/mentor/ResourceCenter.jsx", "src/components/dashboard/mentor/PerformanceMetrics.jsx", "src/components/dashboard/mentor/MentorAnalytics.jsx", "src/components/dashboard/mentor/MenteeList.jsx", "src/app/(routes)/mentor/dashboard/page.jsx", "src/app/(routes)/organization/dashboard/page.jsx", "src/app/(routes)/OrganizationLogin/page.jsx", "src/app/(routes)/About/page.jsx", "src/app/page.jsx"],
+  "exclude": ["node_modules"]
+}

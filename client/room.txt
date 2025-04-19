@@ -1,0 +1,649 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { io } from 'socket.io-client';
+import { useUserContext } from '@/app/context/Userinfo';
+import { motion } from 'framer-motion';
+import { Mic, MicOff, Video, VideoOff, Phone, Users, Settings, Share2, Code } from 'lucide-react';
+import LearningCodeEditor from '@/components/editor/LearningCodeEditor';
+
+const page = () => {
+  const { room } = useParams();
+  const router = useRouter();
+  const [name, setName] = useState('');
+  const [isNameEntered, setIsNameEntered] = useState(false);
+  const [socket, setSocket] = useState(null);
+  const [users, setUsers] = useState([]);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const peerConnection = useRef(null);
+  const { contextisLoggedIn, contextname } = useUserContext();
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const editorRef = useRef(null);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [browserSupport, setBrowserSupport] = useState({ 
+    webrtc: false,
+    media: false 
+  });
+
+  useEffect(() => {
+    const checkBrowserSupport = () => {
+      const webrtcSupport = navigator.mediaDevices && 
+        window.RTCPeerConnection && 
+        window.RTCSessionDescription;
+      const mediaSupport = navigator.mediaDevices && 
+        navigator.mediaDevices.getUserMedia;
+
+      setBrowserSupport({
+        webrtc: !!webrtcSupport,
+        media: !!mediaSupport
+      });
+    };
+
+    checkBrowserSupport();
+  }, []);
+
+  useEffect(() => {
+    if (contextisLoggedIn && contextname && !isNameEntered) {
+      setName(contextname);
+      setIsNameEntered(true);
+    }
+  }, [contextisLoggedIn, contextname, isNameEntered]);
+
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
+  }, [isEditorOpen]);
+
+  useEffect(() => {
+    if (isNameEntered) {
+      const initSocket = io(`https://template-videocall-server.onrender.com`);
+      setSocket(initSocket);
+
+      initSocket.emit('joinRoom', {
+        room,
+        user: {
+          name: name,
+          id: initSocket.id
+        }
+      });
+
+      initSocket.on('userJoined', ({ user }) => {
+        if (user) {
+          setUsers((prevUsers) => {
+            const isUserExists = prevUsers.some(u => u.name === user.name);
+            return isUserExists ? prevUsers : [...prevUsers, user];
+          });
+        }
+      });
+
+      initSocket.on('roomUsers', ({ users: roomUsers }) => {
+        if (roomUsers && Array.isArray(roomUsers)) {
+          setUsers(roomUsers.map(user => ({
+            name: user.name,
+            id: user.id
+          })));
+        }
+      });
+
+      initSocket.on('offer', async (offer) => {
+        if (peerConnection.current) {
+          await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
+          const answer = await peerConnection.current.createAnswer();
+          await peerConnection.current.setLocalDescription(answer);
+          initSocket.emit('answer', {
+            answer: peerConnection.current.localDescription,
+            room,
+            user: {
+              name: name,
+              id: initSocket.id
+            }
+          });
+        }
+      });
+
+      initSocket.on('answer', async (answer) => {
+        if (peerConnection.current) {
+          await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+      });
+
+      initSocket.on('ice-candidate', (candidate) => {
+        if (peerConnection.current) {
+          peerConnection.current.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+      });
+
+      initSocket.on('callEnded', () => {
+        endCall();
+      });
+
+      return () => {
+        initSocket.disconnect();
+      };
+    }
+  }, [isNameEntered, room, name]);
+
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [screenStream, setScreenStream] = useState(null);
+  const screenVideoRef = useRef(null);
+
+  const startCall = async () => {
+    try {
+      setConnectionStatus('connecting');
+
+      const configuration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+        ],
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
+      };
+
+      peerConnection.current = new RTCPeerConnection(configuration);
+
+      peerConnection.current.onconnectionstatechange = () => {
+        setConnectionStatus(peerConnection.current.connectionState);
+      };
+
+      peerConnection.current.oniceconnectionstatechange = () => {
+        if (peerConnection.current.iceConnectionState === 'failed') {
+          console.log('ICE connection failed, attempting restart...');
+          peerConnection.current.restartIce();
+        }
+      };
+
+      peerConnection.current.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('ice-candidate', {
+            candidate: event.candidate,
+            room,
+            user: {
+              name: name,
+              id: socket.id
+            }
+          });
+        }
+      };
+
+      peerConnection.current.ontrack = (event) => {
+        if (event.track.kind === 'video' && event.streams[0].id.includes('screen')) {
+          if (screenVideoRef.current) {
+            screenVideoRef.current.srcObject = event.streams[0];
+          }
+        } else {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = event.streams[0];
+          }
+        }
+      };
+
+      const constraints = {
+        video: {
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          facingMode: 'user'
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      };
+
+      try {
+        const localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        localVideoRef.current.srcObject = localStream;
+        localStream.getTracks().forEach((track) => {
+          peerConnection.current.addTrack(track, localStream);
+        });
+      } catch (mediaError) {
+        console.warn('Failed to get ideal media, trying fallback:', mediaError);
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true
+        });
+        localVideoRef.current.srcObject = fallbackStream;
+        fallbackStream.getTracks().forEach((track) => {
+          peerConnection.current.addTrack(track, fallbackStream);
+        });
+      }
+
+      const offer = await peerConnection.current.createOffer();
+      await peerConnection.current.setLocalDescription(offer);
+
+      socket.emit('offer', {
+        offer,
+        room,
+        user: {
+          name: name,
+          id: socket.id
+        }
+      });
+
+      setConnectionStatus('connected');
+    } catch (error) {
+      console.error('Call setup failed:', error);
+      setConnectionStatus('disconnected');
+      alert('Failed to establish call. Please check your camera and microphone permissions.');
+    }
+  };
+
+  const endCall = () => {
+    if (peerConnection.current) {
+      peerConnection.current.close();
+      peerConnection.current = null;
+    }
+
+    if (localVideoRef.current.srcObject) {
+      localVideoRef.current.srcObject.getTracks().forEach((track) => track.stop());
+      localVideoRef.current.srcObject = null;
+    }
+
+    if (remoteVideoRef.current.srcObject) {
+      remoteVideoRef.current.srcObject.getTracks().forEach((track) => track.stop());
+      remoteVideoRef.current.srcObject = null;
+    }
+
+    if (socket) {
+      socket.emit('endCall', {
+        room,
+        user: {
+          name: name,
+          id: socket.id
+        }
+      });
+      socket.disconnect();
+    }
+
+    if (screenStream) {
+      screenStream.getTracks().forEach(track => track.stop());
+      setScreenStream(null);
+      setIsScreenSharing(false);
+    }
+
+    router.push('/UserInfo');
+  };
+
+  const toggleScreenShare = async () => {
+    try {
+      if (!isScreenSharing) {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ 
+          video: true,
+          audio: true 
+        });
+        
+        stream.getVideoTracks()[0].onended = () => {
+          stopScreenSharing();
+        };
+
+        setScreenStream(stream);
+        setIsScreenSharing(true);
+
+        stream.getTracks().forEach((track) => {
+          peerConnection.current.addTrack(track, stream);
+        });
+
+        const offer = await peerConnection.current.createOffer();
+        await peerConnection.current.setLocalDescription(offer);
+        
+        socket.emit('offer', {
+          offer,
+          room,
+          user: {
+            name: name,
+            id: socket.id
+          },
+          isScreenShare: true
+        });
+
+        if (screenVideoRef.current) {
+          screenVideoRef.current.srcObject = stream;
+        }
+      } else {
+        stopScreenSharing();
+      }
+    } catch (err) {
+      console.error('Error sharing screen:', err);
+      if (err.name === 'NotAllowedError') {
+        console.log('Screen sharing permission denied');
+      }
+      setIsScreenSharing(false);
+    }
+  };
+
+  const stopScreenSharing = () => {
+    if (screenStream) {
+      screenStream.getTracks().forEach(track => {
+        track.stop();
+        const sender = peerConnection.current?.getSenders().find(s => s.track === track);
+        if (sender) {
+          peerConnection.current.removeTrack(sender);
+        }
+      });
+      setScreenStream(null);
+    }
+    if (screenVideoRef.current) {
+      screenVideoRef.current.srcObject = null;
+    }
+    setIsScreenSharing(false);
+  };
+
+  const toggleVideo = () => {
+    if (localVideoRef.current?.srcObject) {
+      const videoTracks = localVideoRef.current.srcObject.getVideoTracks();
+      videoTracks.forEach(track => {
+        track.enabled = isVideoOff;
+        socket.emit('videoStateChange', {
+          room,
+          isVideoOff: !isVideoOff,
+          user: {
+            name: name,
+            id: socket.id
+          }
+        });
+      });
+      setIsVideoOff(!isVideoOff);
+    }
+  };
+
+  useEffect(() => {
+    if (contextisLoggedIn && socket) {
+      startCall();
+    }
+  }, [contextisLoggedIn, socket]);
+
+  useEffect(() => {
+    if (socket) {
+      socket.on('videoStateChange', ({ isVideoOff, user }) => {
+      });
+    }
+  }, [socket]);
+
+  useEffect(() => {
+    return () => {
+      if (peerConnection.current) {
+        peerConnection.current.close();
+        peerConnection.current = null;
+      }
+
+      [localVideoRef, remoteVideoRef, screenVideoRef].forEach(ref => {
+        if (ref.current?.srcObject) {
+          ref.current.srcObject.getTracks().forEach(track => track.stop());
+          ref.current.srcObject = null;
+        }
+      });
+
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+      }
+
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, []);
+
+  const getConnectionStatusColor = () => {
+    switch (connectionStatus) {
+      case 'connected': return 'bg-green-500';
+      case 'connecting': return 'bg-yellow-500 animate-pulse';
+      default: return 'bg-red-500';
+    }
+  };
+
+  return (
+    contextisLoggedIn ? (
+      <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 text-neutral-100 p-2 sm:p-4 md:p-6 relative overflow-hidden">
+        {(!browserSupport.webrtc || !browserSupport.media) && (
+          <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4 mb-4">
+            <p className="text-yellow-500">
+              Your browser may not fully support all features. For the best experience, please use a modern browser like Chrome, Firefox, or Edge.
+            </p>
+          </div>
+        )}
+
+        <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-full">
+          <div className={`w-2 h-2 rounded-full ${getConnectionStatusColor()}`} />
+          <span className="text-xs capitalize">{connectionStatus}</span>
+        </div>
+
+        <div className="absolute inset-0 bg-grid-white/[0.02] -z-10" />
+        <div className="absolute inset-0 bg-gradient-to-b from-neutral-950/80 to-neutral-900/80 backdrop-blur-3xl -z-10" />
+  
+        <div className="max-w-7xl mx-auto space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-3"
+            >
+              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+                <Users className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold">Room: {room}</h2>
+                <p className="text-neutral-400 text-xs">{users.length} participants</p>
+              </div>
+            </motion.div>
+  
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-2 flex-wrap"
+            >
+              {users.map((user, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="relative"
+                >
+                  <div className="h-8 w-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center">
+                    <span className="text-sm font-semibold">{user.name?.[0]?.toUpperCase()}</span>
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-2 h-2 rounded-full bg-green-500 border-2 border-neutral-900" />
+                </motion.div>
+              ))}
+            </motion.div>
+          </div>
+  
+          <div className="relative h-[calc(100vh-180px)] flex">
+            {isEditorOpen && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="w-[60%] h-full bg-neutral-900 rounded-xl overflow-hidden border border-neutral-800"
+              >
+                <div className="h-full">
+                  <LearningCodeEditor
+                    socket={socket}
+                    room={room}
+                    user={{ name, id: socket?.id }}
+                    isOpen={true}
+                    onClose={() => setIsEditorOpen(false)}
+                    editorRef={editorRef}
+                  />
+                </div>
+              </motion.div>
+            )}
+  
+            <motion.div
+              className={`${isEditorOpen ? 'w-[40%]' : 'w-full'} h-full relative transition-all duration-300`}
+            >
+              {isScreenSharing && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="absolute inset-0 rounded-xl overflow-hidden"
+                >
+                  <video
+                    ref={screenVideoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-contain bg-neutral-900"
+                  />
+                  <div className="absolute top-4 left-4">
+                    <div className="flex items-center gap-2 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-full border border-neutral-800">
+                      <Share2 className="w-4 h-4 text-cyan-500" />
+                      <span className="text-xs">Screen Share</span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+  
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className={`absolute ${isScreenSharing ? 'bottom-4 right-4 w-1/4 max-w-[240px] min-w-[160px]' : 'inset-0'} rounded-xl overflow-hidden transition-all duration-300`}
+              >
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover bg-neutral-900"
+                />
+                {users.length > 0 && (
+                  <div className="absolute bottom-4 left-4">
+                    <div className="flex items-center gap-2 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-full border border-neutral-800">
+                      <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                      <span className="text-xs">{users[0]?.name || 'Remote Participant'}</span>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+  
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.2 }}
+                className={`absolute top-4 right-4 ${isScreenSharing ? 'w-1/5 max-w-[180px]' : 'w-1/4 max-w-[240px]'} min-w-[160px] aspect-video rounded-lg overflow-hidden shadow-lg border border-neutral-800 transition-all duration-300`}
+              >
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover bg-neutral-800"
+                />
+                <div className="absolute bottom-2 left-2">
+                  <div className="flex items-center gap-1 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-full text-[10px]">
+                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+                    <span>You</span>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          </div>
+  
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-sm sm:max-w-md"
+          >
+            <div className="flex items-center justify-center gap-2 sm:gap-3 bg-neutral-900/90 backdrop-blur-xl p-2 sm:p-3 rounded-xl border border-neutral-800 shadow-xl mx-4 sm:mx-0">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`p-2 sm:p-3 rounded-full transition-colors ${
+                  isMuted 
+                    ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30' 
+                    : 'bg-neutral-800 hover:bg-neutral-700'
+                }`}
+                onClick={() => {
+                  setIsMuted(!isMuted);
+                  if (localVideoRef.current?.srcObject) {
+                    localVideoRef.current.srcObject.getAudioTracks().forEach(track => {
+                      track.enabled = isMuted;
+                    });
+                  }
+                }}
+              >
+                {isMuted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5" />}
+              </motion.button>
+  
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`p-2 sm:p-3 rounded-full transition-colors ${
+                  isVideoOff 
+                    ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30' 
+                    : 'bg-neutral-800 hover:bg-neutral-700'
+                }`}
+                onClick={toggleVideo}
+              >
+                {isVideoOff ? <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Video className="w-4 h-4 sm:w-5 sm:h-5" />}
+              </motion.button>
+              
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`p-2 sm:p-3 rounded-full transition-colors ${
+                  isScreenSharing 
+                    ? 'bg-cyan-500/20 text-cyan-500 hover:bg-cyan-500/30 border border-cyan-500/50' 
+                    : 'bg-neutral-800 hover:bg-neutral-700'
+                }`}
+                onClick={toggleScreenShare}
+              >
+                <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`p-2 sm:p-3 rounded-full transition-colors ${
+                  isEditorOpen
+                    ? 'bg-cyan-500/20 text-cyan-500 hover:bg-cyan-500/30 border border-cyan-500/50'
+                    : 'bg-neutral-800 hover:bg-neutral-700'
+                }`}
+                onClick={() => setIsEditorOpen(!isEditorOpen)}
+              >
+                <Code className="w-4 h-4 sm:w-5 sm:h-5" />
+              </motion.button>
+              <motion.button
+                onClick={endCall}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="p-2 sm:p-3 rounded-full bg-red-500/20 hover:bg-red-500/30 text-red-500 border border-red-500/50 transition-colors"
+              >
+                <Phone className="w-4 h-4 sm:w-5 sm:h-5" />
+              </motion.button>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    ) : (
+      <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="relative bg-neutral-900/50 backdrop-blur-xl border border-neutral-800 rounded-xl p-6 text-center max-w-lg w-full"
+        >
+          <div className="absolute inset-0 bg-gradient-to-b from-blue-500/10 to-cyan-500/10 rounded-xl" />
+          <div className="relative z-10">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 mx-auto mb-4 flex items-center justify-center">
+              <Users className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent mb-3">
+              Please Login First
+            </h1>
+            <p className="text-neutral-400 text-sm mb-6">
+              You need to be logged in to join this video call
+            </p>
+            <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full" />
+          </div>
+        </motion.div>
+      </div>
+    )
+  );
+};
+
+export default page;
