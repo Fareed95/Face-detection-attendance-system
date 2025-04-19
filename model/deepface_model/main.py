@@ -21,7 +21,9 @@ def train_faces(csv_path, encoding_file="face_encodings.pkl"):
 
     for index, row in df.iterrows():
         name = row['name']
-        image_paths = [path.strip() for path in row[1:] if isinstance(path, str) and path.strip()]
+        # parent_email = row['parent_email']
+        # uin = row['uin']
+        image_paths = [path.strip() for path in row[3:] if isinstance(path, str) and path.strip()]
         encodings = []
 
         for image_path in image_paths:
@@ -77,15 +79,18 @@ def recognize_face(image_path, encoding_file="face_encodings.pkl", threshold=0.7
         print(f"[No Match] No similar face found (Best similarity: {best_score:.2f})")
         return None
     
-def recognize_faces_in_directory(directory_path, encoding_file="face_encodings.pkl", threshold=0.7):
+def recognize_faces_in_directory(directory_path, encoding_file="face_encodings.pkl", csv_path="Data/dataset_copy.csv", threshold=0.7):
     if not os.path.exists(encoding_file):
         print(f"[Error] Encoding file '{encoding_file}' not found.")
         return []
 
-    with open(encoding_file, 'rb') as f:    
+    with open(encoding_file, 'rb') as f:
         face_encodings = pickle.load(f)
 
-    recognized_faces = set()
+    # Load metadata from CSV
+    df = pd.read_csv(csv_path).set_index("name")
+
+    recognized_faces = {}
 
     for filename in os.listdir(directory_path):
         if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
@@ -93,7 +98,6 @@ def recognize_faces_in_directory(directory_path, encoding_file="face_encodings.p
             print(f"\n📷 Processing {filename}...")
 
             try:
-                # This will detect multiple faces and return their embeddings
                 results = DeepFace.represent(img_path=image_path, model_name='Facenet', enforce_detection=False)
 
                 for face in results:
@@ -109,7 +113,12 @@ def recognize_faces_in_directory(directory_path, encoding_file="face_encodings.p
 
                     if best_score >= threshold:
                         print(f"✅ Found: {best_match} (Similarity: {best_score:.2f})")
-                        recognized_faces.add(best_match)
+                        if best_match not in recognized_faces:
+                            recognized_faces[best_match] = {
+                                "name": best_match,
+                                "uin": df.loc[best_match, "uin"],
+                                "parent_email": df.loc[best_match, "parent_email"]
+                            }
                     else:
                         print(f"❌ Unknown face (Similarity: {best_score:.2f})")
 
@@ -117,10 +126,11 @@ def recognize_faces_in_directory(directory_path, encoding_file="face_encodings.p
                 print(f"[Error] Failed to process {filename}: {e}")
 
     print("\n🧠 Final recognized faces:")
-    for name in recognized_faces:
-        print(f" - {name}")
+    for val in recognized_faces.values():
+        print(f" - {val['name']}")
 
-    return list(recognized_faces)
+    return list(recognized_faces.values())
+
 # Example usage
 if __name__ == "__main__":
     # Train the model (you can comment this out if already trained)

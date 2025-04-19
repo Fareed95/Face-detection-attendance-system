@@ -10,7 +10,8 @@ import datetime
 from metrics.division import split_image, delete_directory  # Ensure this imports correctly
 from deepface_model.main import recognize_faces_in_directory  # Now this should work
 from flask_cors import CORS
-
+from api.email_sending import send_attendance_emails  # Ensure this imports correctly
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -48,7 +49,7 @@ def upload_images():
         return jsonify({"error": "Subject name is required"}), 400
 
     # Create a directory named after the user and the current timestamp
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     user_output_folder = os.path.join(OUTPUT_FOLDER, f"{user_name}_{timestamp}")
     os.makedirs(user_output_folder, exist_ok=True)
 
@@ -74,7 +75,12 @@ def upload_images():
 
     # Call recognition_faces_in_directory function from main.py
     face_recognition_result = recognize_faces_in_directory(user_output_folder)
-
+    # class_time = datetime.datetime.now().strftime('%H:%M:%S')
+    try:
+        send_attendance_emails(face_recognition_result, subject=subject_name, class_time=timestamp)
+    except Exception as e:
+        print(f"[ERROR] Sending emails failed: {e}")
+        # return jsonify({"error": "Failed to send emails"}), 500
     # Delete the output folder after processing
     delete_directory(user_output_folder)
 
