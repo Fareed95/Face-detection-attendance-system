@@ -1,14 +1,15 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # Add parent directory to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))   # Add parent directory to the Python path
 
 from flask import Flask, request, jsonify
 import os
 import shutil
 import cv2
 import datetime
-from recognition.division import split_image, delete_directory  # Ensure this imports correctly
+from metrics.division import split_image, delete_directory  # Ensure this imports correctly
 from deepface_model.main import recognize_faces_in_directory  # Now this should work
+from flask_cors import CORS
 
 
 app = Flask(__name__)
@@ -29,12 +30,22 @@ def index():
 # @app.route('/upload', methods=['GET'])
 
 
+# cors
+
+CORS(app, origins=[
+    "http://localhost:3000",
+    "http://localhost:3001"
+], supports_credentials=True)
+
 @app.route('/upload', methods=['POST'])
 def upload_images():
     # Get the name from the form data
     user_name = request.form.get('name')
     if not user_name:
         return jsonify({"error": "Name is required"}), 400
+    subject_name = request.form.get('subject_name')
+    if not subject_name:
+        return jsonify({"error": "Subject name is required"}), 400
 
     # Create a directory named after the user and the current timestamp
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -46,6 +57,9 @@ def upload_images():
     if len(images) > 6:
         return jsonify({"error": "You can upload a maximum of 6 images"}), 400
 
+
+    if not images:
+        return jsonify({"error": "No images uploaded"}), 400
     # Save uploaded images to the server
     image_paths = []
     for image in images:
@@ -67,6 +81,5 @@ def upload_images():
     # Return the list of recognized faces in the response
     return jsonify({"recognized_faces": face_recognition_result})
 
-
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(port=8000,debug=True) 
