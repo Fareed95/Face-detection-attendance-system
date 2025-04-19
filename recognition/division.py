@@ -27,21 +27,21 @@ def split_image(image_path, output_folder, grid_size):
             print(f"[Saved] {tile_filename}, Success: {saved}")
             count += 1
 
-def delete_directory():
-    if os.path.exists('output'):
-        shutil.rmtree('output')
+def delete_directory(directory='output'):
+    if os.path.exists(directory):
+        shutil.rmtree(directory)
         print("[INFO] Output directory deleted.")
 
 if __name__ == "__main__":
     TEST_FOLDER = "test_folder"
     OUTPUT_FOLDER = "output"
 
-    delete_directory()
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    delete_directory('notebook')
+    # os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-    for filename in os.listdir(TEST_FOLDER):
-        if filename.lower().endswith((".jpg", ".jpeg", ".png")):
-            image_path = os.path.join(TEST_FOLDER, filename)
-            print(f"\n[PROCESSING] {image_path}")
-            split_image(image_path, OUTPUT_FOLDER, grid_size=3)
-            split_image(image_path, OUTPUT_FOLDER, grid_size=4)
+    # for filename in os.listdir(TEST_FOLDER):
+    #     if filename.lower().endswith((".jpg", ".jpeg", ".png")):
+    #         image_path = os.path.join(TEST_FOLDER, filename)
+    #         print(f"\n[PROCESSING] {image_path}")
+    #         split_image(image_path, OUTPUT_FOLDER, grid_size=3)
+    #         split_image(image_path, OUTPUT_FOLDER, grid_size=4)
