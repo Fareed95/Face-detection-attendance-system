@@ -1,17 +1,12 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))   # Add parent directory to the Python path
-
+import json
 from flask import Flask, request, jsonify
-import os
-import shutil
-import cv2
 import datetime
 from metrics.division import split_image, delete_directory  # Ensure this imports correctly
 from deepface_model.main import recognize_faces_in_directory  # Now this should work
 from flask_cors import CORS
 from api.email_sending import send_attendance_emails  # Ensure this imports correctly
-from datetime import datetime
 
 app = Flask(__name__)
 
@@ -25,14 +20,24 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+def sanitize_face_recognition_result(result):
+    for face in result:
+        if 'parent_email' in face and (face['parent_email'] == 'NaN' or face['parent_email'] != face['parent_email']):
+            face['parent_email'] = None  # or "" if you prefer an empty string
+    return result
+
+def validate_json(data):
+    try:
+        json.dumps(data)
+        return True
+    except (TypeError, OverflowError):
+        return False
+
 @app.route('/')
 def index():
     return "Welcome to the Image Upload and Recognition API!"
-# @app.route('/upload', methods=['GET'])
 
-
-# cors
-
+# CORS configuration
 CORS(app, origins=[
     "http://localhost:3000",
     "http://localhost:3001"
@@ -49,7 +54,7 @@ def upload_images():
         return jsonify({"error": "Subject name is required"}), 400
 
     # Create a directory named after the user and the current timestamp
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     user_output_folder = os.path.join(OUTPUT_FOLDER, f"{user_name}_{timestamp}")
     os.makedirs(user_output_folder, exist_ok=True)
 
@@ -58,9 +63,9 @@ def upload_images():
     if len(images) > 6:
         return jsonify({"error": "You can upload a maximum of 6 images"}), 400
 
-
     if not images:
         return jsonify({"error": "No images uploaded"}), 400
+
     # Save uploaded images to the server
     image_paths = []
     for image in images:
@@ -75,12 +80,22 @@ def upload_images():
 
     # Call recognition_faces_in_directory function from main.py
     face_recognition_result = recognize_faces_in_directory(user_output_folder)
-    # class_time = datetime.datetime.now().strftime('%H:%M:%S')
+
+    # Sanitize the face recognition result
+    face_recognition_result = sanitize_face_recognition_result(face_recognition_result)
+
+    # Log the face recognition result
+    print("Face recognition result:", face_recognition_result)
+
+    # Validate the response data
+    if not validate_json(face_recognition_result):
+        return jsonify({"error": "Invalid JSON response"}), 500
+
     try:
         send_attendance_emails(face_recognition_result, subject=subject_name, class_time=timestamp)
     except Exception as e:
         print(f"[ERROR] Sending emails failed: {e}")
-        # return jsonify({"error": "Failed to send emails"}), 500
+
     # Delete the output folder after processing
     delete_directory(user_output_folder)
 
@@ -88,4 +103,4 @@ def upload_images():
     return jsonify({"recognized_faces": face_recognition_result})
 
 if __name__ == '__main__':
-    app.run(port=8000,debug=True) 
+    app.run(port=8000, debug=True)
