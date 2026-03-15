@@ -16,6 +16,22 @@ export default function CodePlayground() {
   const [theme, setTheme] = useState('vs-dark');
   const [copied, setCopied] = useState(false);
 
+  const fallbackCopyToClipboard = (text) => {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.setAttribute('readonly', '');
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.select();
+
+    try {
+      return document.execCommand('copy');
+    } finally {
+      document.body.removeChild(textArea);
+    }
+  };
+
   const handleRunCode = () => {
     try {
       // Create a new function from the code string
@@ -32,10 +48,19 @@ export default function CodePlayground() {
     }
   };
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyCode = async () => {
+    try {
+      if (navigator?.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(code);
+      } else if (!fallbackCopyToClipboard(code)) {
+        throw new Error('Clipboard API unavailable');
+      }
+
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      setOutput('Copy to clipboard is not supported in this browser.');
+    }
   };
 
   return (

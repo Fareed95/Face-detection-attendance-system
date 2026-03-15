@@ -16,6 +16,21 @@ OUTPUT_FOLDER = 'output'
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+DEFAULT_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://192.168.0.107:3000",
+    "http://192.168.0.107",
+]
+
+
+def get_allowed_origins():
+    configured_origins = os.getenv('ALLOWED_ORIGINS')
+    if not configured_origins:
+        return DEFAULT_ALLOWED_ORIGINS
+
+    return [origin.strip() for origin in configured_origins.split(',') if origin.strip()]
+
 # Ensure the upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -38,10 +53,7 @@ def index():
     return "Welcome to the Image Upload and Recognition API!"
 
 # CORS configuration
-CORS(app, origins=[
-    "http://localhost:3000",
-    "http://localhost:3001"
-], supports_credentials=True)
+CORS(app, origins=get_allowed_origins(), supports_credentials=True)
 
 @app.route('/upload', methods=['POST'])
 def upload_images():
@@ -97,10 +109,10 @@ def upload_images():
         print(f"[ERROR] Sending emails failed: {e}")
 
     # Delete the output folder after processing
-    delete_directory(user_output_folder)
+    # delete_directory(user_output_folder)
 
     # Return the list of recognized faces in the response
     return jsonify({"recognized_faces": face_recognition_result})
 
 if __name__ == '__main__':
-    app.run(port=8000, debug=True)
+    app.run(host='0.0.0.0', port=8000, debug=True)

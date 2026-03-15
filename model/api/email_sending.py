@@ -29,3 +29,10 @@ def send_attendance_emails(recognized_faces, subject, class_time):
                 print(f"📧 Email sent to {face['parent_email']}")
             except Exception as e:
                 print(f"[Error] Failed to send email to {face['parent_email']}: {e}")
+
+
+if __name__ == "__main__":
+    recognised_faces = [
+        {"name": "John Doe", "uin": "123456", "parent_email":"fareedsayed95@gmail.com"}
+    ]
+    send_attendance_emails(recognised_faces, subject="Math", class_time="2024-06-01 10:00:00")

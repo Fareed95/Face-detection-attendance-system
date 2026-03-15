@@ -1,9 +1,24 @@
 services:
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: client_app
+    depends_on:
+      - model
+    environment:
+      NEXT_PUBLIC_MODEL_API_SERVER: "http://192.168.0.107:8000"
+    ports:
+      - "3000:3000"
+    command: ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+
   model:
     build:
       context: ./model
       dockerfile: Dockerfile
     container_name: model_api
+    environment:
+      ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:3001,http://192.168.0.107:3000,http://192.168.0.107"
     # volumes:
       # - ./models:/app
     ports:

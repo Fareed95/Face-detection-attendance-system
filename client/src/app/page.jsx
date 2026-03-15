@@ -1,117 +1,128 @@
 "use client";
 import { useState, useRef, useEffect } from 'react';
 import Head from 'next/head';
-import { Camera, Upload, User, BookOpen, CheckCircle, AlertCircle, Loader } from 'lucide-react';
+import { Camera, User, BookOpen, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function Home() {
-  const [isLoggedIn, setIsLoggedIn] = useState(true); // Set to true for testing
-  const [uploadMode, setUploadMode] = useState('upload');
-  const [photos, setPhotos] = useState([null, null, null, null]);
+  const MODEL_API_SERVER = process.env.NEXT_PUBLIC_MODEL_API_SERVER;
+  const [isLoggedIn, setIsLoggedIn] = useState(true);
+  const [photos, setPhotos] = useState(Array(6).fill(null));
   const [cameraActive, setCameraActive] = useState(false);
-  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [captureCountdown, setCaptureCountdown] = useState(null);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState('upload'); // 'upload', 'info', 'loading', 'results'
   const [nameInput, setNameInput] = useState('');
   const [subjectInput, setSubjectInput] = useState('');
   const [recognizedFaces, setRecognizedFaces] = useState([]);
   const [error, setError] = useState(null);
+  const [cameraError, setCameraError] = useState(null);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const fileInputRef = useRef(null);
+
+  const stopCameraStream = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const tracks = videoRef.current.srcObject.getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  const getCameraErrorMessage = (err) => {
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      return 'Camera access on phones requires HTTPS or localhost. Open this app over HTTPS and try again.';
+    }
+
+    if (err?.name === 'NotAllowedError') {
+      return 'Camera permission was denied. Allow camera access in your browser settings and try again.';
+    }
+
+    if (err?.name === 'NotFoundError') {
+      return 'No camera was found on this device.';
+    }
+
+    if (err?.name === 'NotReadableError') {
+      return 'Your camera is already in use by another app.';
+    }
+
+    return 'This browser cannot access the camera on this device.';
+  };
 
   useEffect(() => {
     if (cameraActive && videoRef.current) {
-      navigator.mediaDevices.getUserMedia({ video: true })
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        setCameraError(getCameraErrorMessage());
+        setCameraActive(false);
+        return;
+      }
+
+      setCameraError(null);
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+        },
+        audio: false,
+      })
         .then(stream => {
           videoRef.current.srcObject = stream;
         })
         .catch(err => {
           console.error("Error accessing webcam:", err);
+          setCameraError(getCameraErrorMessage(err));
           setCameraActive(false);
         });
-    } else if (!cameraActive && videoRef.current && videoRef.current.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks();
-      tracks.forEach(track => track.stop());
-      videoRef.current.srcObject = null;
+    } else if (!cameraActive) {
+      stopCameraStream();
     }
 
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = videoRef.current.srcObject.getTracks();
-        tracks.forEach(track => track.stop());
-      }
+      stopCameraStream();
     };
   }, [cameraActive]);
 
-  const capturePhoto = () => {
+  const captureFrame = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
+    if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) return null;
+    const context = canvas.getContext('2d');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.9);
+  };
 
-    if (video && canvas) {
-      const context = canvas.getContext('2d');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const startAutoCapture = () => {
+    if (isCapturing || !cameraActive) return;
+    if (!videoRef.current || videoRef.current.readyState < 2) {
+      setCameraError('Camera is still starting. Wait a moment and try again.');
+      return;
+    }
 
-      // Convert to JPEG specifically
-      const photoData = canvas.toDataURL('image/jpeg', 0.9);
-      const newPhotos = [...photos];
-      newPhotos[currentPhotoIndex] = photoData;
-      setPhotos(newPhotos);
+    setCameraError(null);
+    const newPhotos = Array(6).fill(null);
+    setPhotos([...newPhotos]);
+    setIsCapturing(true);
+    setCaptureCountdown(6);
 
-      if (currentPhotoIndex < 3 && !newPhotos[currentPhotoIndex + 1]) {
-        setCurrentPhotoIndex(currentPhotoIndex + 1);
+    let count = 0;
+    const interval = setInterval(() => {
+      const frame = captureFrame();
+      if (frame) newPhotos[count] = frame;
+      count++;
+      setPhotos([...newPhotos]);
+      setCaptureCountdown(6 - count);
+
+      if (count === 6) {
+        clearInterval(interval);
+        setIsCapturing(false);
+        setCaptureCountdown(null);
       }
-    }
-  };
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        // Convert uploaded image to JPEG format
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-
-          // Convert to JPEG format with 0.9 quality
-          const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-
-          const newPhotos = [...photos];
-          newPhotos[currentPhotoIndex] = jpegDataUrl;
-          setPhotos(newPhotos);
-
-          if (currentPhotoIndex < 3 && !newPhotos[currentPhotoIndex + 1]) {
-            setCurrentPhotoIndex(currentPhotoIndex + 1);
-          }
-        };
-        img.src = event.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const selectPhotoSlot = (index) => {
-    setCurrentPhotoIndex(index);
-    if (uploadMode === 'upload') {
-      fileInputRef.current.click();
-    }
-  };
-
-  const removePhoto = (index) => {
-    const newPhotos = [...photos];
-    newPhotos[index] = null;
-    setPhotos(newPhotos);
+    }, 1000);
   };
 
   const completedPhotos = photos.filter(p => p !== null).length;
-  const allPhotosCompleted = completedPhotos === 4;
+  const allPhotosCompleted = completedPhotos === 6;
 
   const prepareFileFromDataURL = async (dataURL, index) => {
     // Convert to JPEG format if not already
@@ -134,6 +145,18 @@ export default function Home() {
     const res = await fetch(jpegDataUrl);
     const blob = await res.blob();
     return new File([blob], `photo${index + 1}.jpg`, { type: 'image/jpeg' });
+  };
+
+  const getUploadEndpoint = () => {
+    if (MODEL_API_SERVER) {
+      return `${MODEL_API_SERVER.replace(/\/$/, '')}/upload`;
+    }
+
+    if (typeof window !== 'undefined') {
+      return `${window.location.protocol}//${window.location.hostname}:8000/upload`;
+    }
+
+    return 'http://localhost:8000/upload';
   };
 
   const handleSubmitPhotos = async () => {
@@ -168,7 +191,7 @@ export default function Home() {
       }
 
       // Send POST request
-      const response = await fetch('http://localhost:8000/upload', {
+      const response = await fetch(getUploadEndpoint(), {
         method: 'POST',
         body: formData,
       });
@@ -191,165 +214,123 @@ export default function Home() {
   };
 
   const handleReset = () => {
-    setPhotos([null, null, null, null]);
-    setCurrentPhotoIndex(0);
+    setPhotos(Array(6).fill(null));
     setNameInput('');
     setSubjectInput('');
     setStep('upload');
     setRecognizedFaces([]);
     setError(null);
+    setCameraError(null);
+    setIsCapturing(false);
+    setCaptureCountdown(null);
+    setCameraActive(false);
   };
 
   const renderUploadStep = () => (
     <div className="max-w-4xl mx-auto">
       <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 rounded-2xl p-6 md:p-8 shadow-xl">
-        <div className="flex justify-center mb-8">
-          <div className="bg-gray-800/50 backdrop-blur-md p-1 rounded-lg inline-flex">
-            <button
-              onClick={() => {
-                setUploadMode('upload');
-                setCameraActive(false);
-              }}
-              className={`px-4 py-2 rounded-md flex items-center transition-all duration-300 ${
-                uploadMode === 'upload'
-                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <Upload size={18} className="mr-2" />
-              Upload Photos
-            </button>
-            <button
-              onClick={() => {
-                setUploadMode('webcam');
-                setCameraActive(true);
-              }}
-              className={`px-4 py-2 rounded-md flex items-center transition-all duration-300 ${
-                uploadMode === 'webcam'
-                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <Camera size={18} className="mr-2" />
-              Use Webcam
-            </button>
+
+        {/* Webcam preview */}
+        <div className="mb-6">
+          <div className="relative aspect-video bg-gray-800/50 backdrop-blur-md rounded-lg overflow-hidden">
+            {cameraActive ? (
+              <>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+                {/* Countdown overlay */}
+                {isCapturing && captureCountdown !== null && captureCountdown > 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="text-white text-7xl font-bold drop-shadow-lg">
+                      {captureCountdown}
+                    </span>
+                  </div>
+                )}
+                {/* Start capturing button */}
+                {!isCapturing && (
+                  <button
+                    onClick={startAutoCapture}
+                    className="absolute bottom-4 left-1/2 transform -translate-x-1/2 px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 rounded-full flex items-center transition-all shadow-lg hover:shadow-cyan-500/25 font-medium"
+                  >
+                    <Camera size={18} className="mr-2" />
+                    {completedPhotos > 0 ? 'Retake Photos' : 'Start Capturing'}
+                  </button>
+                )}
+                {isCapturing && (
+                  <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 px-6 py-2.5 bg-gray-900/80 rounded-full text-cyan-400 font-medium text-sm">
+                    Capturing {completedPhotos} / 6…
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-3">
+                <Camera size={40} className="text-gray-500" />
+                <button
+                  onClick={() => {
+                    setCameraError(null);
+                    setCameraActive(true);
+                  }}
+                  className="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 rounded-lg flex items-center transition-all shadow-lg hover:shadow-cyan-500/25"
+                >
+                  <Camera size={18} className="mr-2" />
+                  Enable Camera
+                </button>
+              </div>
+            )}
           </div>
+          <canvas ref={canvasRef} className="hidden" />
+          {cameraError && (
+            <div className="mt-4 p-4 bg-red-900/30 border border-red-800 rounded-lg flex items-start">
+              <AlertCircle size={20} className="text-red-500 mr-3 mt-0.5 flex-shrink-0" />
+              <p className="text-red-400 text-sm">{cameraError}</p>
+            </div>
+          )}
+          <p className="mt-3 text-sm text-gray-500">
+            Mobile browsers usually require HTTPS for camera access. If you open this page from a phone over plain HTTP, the camera API may be unavailable.
+          </p>
         </div>
 
-        {uploadMode === 'webcam' && (
-          <div className="mb-8">
-            <div className="relative aspect-video bg-gray-800/50 backdrop-blur-md rounded-lg overflow-hidden">
-              {cameraActive ? (
-                <>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  ></video>
-                  <button
-                    onClick={capturePhoto}
-                    className="absolute bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 rounded-full flex items-center transition-all shadow-lg hover:shadow-cyan-500/25"
-                  >
-                    <Camera size={18} className="mr-2" />
-                    Capture Photo {currentPhotoIndex + 1}
-                  </button>
-                </>
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <button
-                    onClick={() => setCameraActive(true)}
-                    className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 rounded-lg flex items-center transition-all shadow-lg hover:shadow-cyan-500/25"
-                  >
-                    <Camera size={18} className="mr-2" />
-                    Enable Camera
-                  </button>
-                </div>
-              )}
-            </div>
-            <canvas ref={canvasRef} className="hidden"></canvas>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {[0, 1, 2, 3].map((index) => (
+        {/* Captured frames grid (3×2) */}
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6">
+          {Array(6).fill(null).map((_, index) => (
             <div
               key={index}
               className={`aspect-square rounded-lg overflow-hidden border transition-all duration-300 ${
-                currentPhotoIndex === index && !photos[index]
-                  ? 'border-cyan-500 border-2'
-                  : 'border-gray-700 hover:border-cyan-500'
-              } relative cursor-pointer group`}
-              onClick={() => selectPhotoSlot(index)}
+                photos[index]
+                  ? 'border-cyan-500'
+                  : 'border-gray-700'
+              }`}
             >
               {photos[index] ? (
-                <div className="relative h-full">
-                  <img
-                    src={photos[index]}
-                    alt={`Photo ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removePhoto(index);
-                      }}
-                      className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-full transition-all duration-300"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
+                <img
+                  src={photos[index]}
+                  alt={`Frame ${index + 1}`}
+                  className="w-full h-full object-cover"
+                />
               ) : (
-                <div className="w-full h-full bg-gray-800/50 backdrop-blur-md flex flex-col items-center justify-center p-4">
-                  {uploadMode === 'upload' ? (
-                    <>
-                      <Upload size={24} className="text-gray-500 mb-2" />
-                      <span className="text-gray-500 text-sm text-center">
-                        {index === currentPhotoIndex
-                          ? "Click to upload"
-                          : `Photo ${index + 1}`}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera size={24} className="text-gray-500 mb-2" />
-                      <span className="text-gray-500 text-sm text-center">
-                        {index === currentPhotoIndex
-                          ? "Ready to capture"
-                          : `Photo ${index + 1}`}
-                      </span>
-                    </>
-                  )}
+                <div className="w-full h-full bg-gray-800/50 flex flex-col items-center justify-center">
+                  <Camera size={18} className="text-gray-600 mb-1" />
+                  <span className="text-gray-600 text-xs">{index + 1}</span>
                 </div>
               )}
             </div>
           ))}
         </div>
 
-        {uploadMode === 'upload' && (
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-        )}
-
+        {/* Progress bar */}
         <div className="flex justify-between items-center mb-8">
           <div className="w-full bg-gray-800/50 backdrop-blur-md rounded-full h-2.5 mr-6">
             <div
               className="bg-gradient-to-r from-cyan-500 to-blue-600 h-2.5 rounded-full transition-all duration-300"
-              style={{ width: `${(completedPhotos / 4) * 100}%` }}
-            ></div>
+              style={{ width: `${(completedPhotos / 6) * 100}%` }}
+            />
           </div>
           <div className="whitespace-nowrap text-gray-400">
-            {completedPhotos}/4 completed
+            {completedPhotos}/6 captured
           </div>
         </div>
 
@@ -448,7 +429,7 @@ export default function Home() {
 
         <h3 className="text-2xl font-bold mb-3">Processing Images</h3>
         <p className="text-gray-400 mb-8">
-          Our facial recognition system is analyzing the uploaded images. This might take a moment...
+          Our facial recognition system is analyzing the captured images. This might take a moment...
         </p>
 
         <div className="w-full bg-gray-800/50 backdrop-blur-md rounded-full h-2.5 mb-4 overflow-hidden">
@@ -539,7 +520,7 @@ export default function Home() {
               <AlertCircle size={32} className="text-gray-400" />
             </div>
             <h4 className="text-xl font-medium mb-2">No students detected</h4>
-            <p className="text-gray-400 mb-6">Try uploading clearer images or with better lighting conditions</p>
+            <p className="text-gray-400 mb-6">Try capturing again with better lighting and a steadier camera position</p>
             <button
               onClick={handleReset}
               className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-all inline-flex items-center"
@@ -573,7 +554,7 @@ export default function Home() {
       <main className="container mx-auto px-6 py-10">
         <div className="max-w-2xl mx-auto text-center mb-12">
           <h2 className="text-5xl font-bold mb-4">Automated Attendance System</h2>
-          <p className="text-gray-400 text-lg">Upload or capture four images to mark attendance using facial recognition</p>
+          <p className="text-gray-400 text-lg">Enable your webcam and capture 6 photos automatically for facial recognition attendance</p>
         </div>
 
         {step === 'upload' && renderUploadStep()}

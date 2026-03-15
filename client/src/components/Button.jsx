@@ -18,17 +18,36 @@ export function TailwindcssButtons() {
     }
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        console.log("Text copied to clipboard:", text);
-        toast.success("Copied to clipboard");
-      })
-      .catch((err) => {
-        console.error("Error copying text to clipboard:", err);
-        toast.error("Error copying to clipboard");
-      });
+  const fallbackCopyToClipboard = (text) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.setAttribute("readonly", "");
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.select();
+
+    try {
+      return document.execCommand("copy");
+    } finally {
+      document.body.removeChild(textArea);
+    }
+  };
+
+  const copyToClipboard = async (text) => {
+    try {
+      if (navigator?.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else if (!fallbackCopyToClipboard(text)) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      console.log("Text copied to clipboard:", text);
+      toast.success("Copied to clipboard");
+    } catch (err) {
+      console.error("Error copying text to clipboard:", err);
+      toast.error("Copy is not supported in this browser");
+    }
   };
   return (
     (<div className="pb-40 px-4 w-full">
