@@ -1,0 +1,211 @@
+# ============================================================================
+# AdaptiveGrid Research Framework - Experiment Configuration
+# ============================================================================
+# This YAML configuration controls all aspects of the research experiments.
+# Modify parameters here to run different experiment combinations for
+# the ablation study without changing any code.
+# ============================================================================
+
+# --- Experiment Metadata ---
+experiment:
+  name: "AdaptiveGrid_Classroom_Attendance"
+  version: "1.0.0"
+  description: >
+    Systematic evaluation of multi-resolution grid tiling strategies
+    combined with deep face recognition models for robust attendance
+    marking in unconstrained classroom group photographs.
+  author: "Research Team"
+  date: "2026-04-03"
+
+# --- Recognition Model Configuration ---
+# Supported models: VGG-Face, Facenet, Facenet512, OpenFace, DeepFace, DeepID, ArcFace, Dlib, SFace, GhostFaceNet
+model:
+  # Which recognition model to use for embedding extraction
+  recognition_model: "Facenet512"
+
+  # Which face detector backend to use
+  # Options: opencv, ssd, dlib, mtcnn, retinaface, mediapipe, yolov8, yunet, fastmtcnn, centerface
+  detector_backend: "retinaface"
+
+  # Distance metric for comparing embeddings
+  # Options: cosine, euclidean, euclidean_l2
+  distance_metric: "cosine"
+
+  # Similarity threshold for positive match (model-specific defaults used if not set)
+  threshold: null  # null = use model default; or set float like 0.40
+
+  # Whether to enforce face detection (False = process even without detected face)
+  enforce_detection: false
+
+  # Alignment: whether to align faces before encoding
+  align: true
+
+  # Normalization type for embeddings
+  normalization: "base"  # Options: base, raw, Facenet, Facenet2018, VGGFace, VGGFace2, ArcFace
+
+# --- Grid Tiling Configuration ---
+grid:
+  # Master switch: enable or disable grid tiling entirely
+  enabled: true
+
+  # Grid sizes to apply (each image is split into NxN tiles)
+  # Common research values: [2, 3, 4, 5]
+  sizes: [3, 4]
+
+  # Whether to also process the original (full) image alongside tiles
+  include_original: true
+
+  # Overlap ratio between tiles (0.0 = no overlap, 0.5 = 50% overlap)
+  overlap: 0.0
+
+  # Minimum tile size in pixels (skip tiles smaller than this)
+  min_tile_size: 64
+
+  # Confidence-based filtering: skip tiles with low face detection confidence
+  confidence_filter:
+    enabled: true
+    min_confidence: 0.5  # Minimum detection confidence to keep a tile result
+
+# --- Preprocessing Configuration ---
+preprocessing:
+  # Enhancement method to apply before recognition
+  # Options: none, sharpen, clahe, denoise, super_resolution, combined
+  enhancement: "none"
+
+  # Resize input images to this max dimension before processing (0 = no resize)
+  max_dimension: 0
+
+  # Convert grayscale images to RGB
+  ensure_rgb: true
+
+  # Sharpen parameters (used when enhancement includes sharpening)
+  sharpen:
+    kernel_strength: 5.0
+    blur_kernel: [0, -1, 0, -1, 5, -1, 0, -1, 0]
+
+  # CLAHE parameters (Contrast Limited Adaptive Histogram Equalization)
+  clahe:
+    clip_limit: 2.0
+    tile_grid_size: [8, 8]
+
+  # Denoising parameters
+  denoise:
+    h: 10  # filter strength
+    template_window_size: 7
+    search_window_size: 21
+
+# --- Dataset Configuration ---
+dataset:
+  # Path to the CSV file with training data (name, uin, parent_email, image_path1, image_path2, ...)
+  train_csv: "Data/dataset.csv"
+
+  # Path to test images directory
+  test_dir: "test_folder"
+
+  # Path to ground truth annotations for evaluation
+  # Format: JSON with {"image_name": ["person1", "person2", ...]}
+  ground_truth: "Data/ground_truth.json"
+
+  # Encoding cache file
+  encoding_cache: "face_encodings.pkl"
+
+# --- Deduplication Configuration ---
+deduplication:
+  # Strategy for removing duplicate detections across overlapping tiles
+  # Options: none, name_based, embedding_nms, voting
+  strategy: "name_based"
+
+  # For embedding_nms: minimum cosine similarity to consider as same person
+  nms_threshold: 0.85
+
+  # For voting: minimum number of tiles that must agree
+  min_votes: 2
+
+# --- Evaluation Metrics ---
+evaluation:
+  # Which metrics to compute
+  metrics:
+    - precision
+    - recall
+    - f1_score
+    - accuracy
+    - far   # False Accept Rate
+    - frr   # False Reject Rate
+
+  # TAR@FAR thresholds to evaluate
+  tar_at_far: [0.001, 0.01, 0.1]
+
+  # Whether to compute per-class (per-person) metrics
+  per_class: true
+
+  # Whether to measure inference time
+  measure_time: true
+
+  # Whether to measure memory usage
+  measure_memory: false
+
+# --- Ablation Study Configuration ---
+# Define parameter sweeps for systematic comparison
+ablation:
+  enabled: false
+
+  # Parameters to sweep (cartesian product of all values)
+  sweep:
+    recognition_model:
+      - "VGG-Face"
+      - "Facenet"
+      - "Facenet512"
+      - "ArcFace"
+      - "SFace"
+      - "OpenFace"
+      - "DeepID"
+      - "Dlib"
+
+    detector_backend:
+      - "retinaface"
+      - "mtcnn"
+
+    grid_enabled:
+      - true
+      - false
+
+    grid_sizes:
+      - []         # No grid
+      - [3]        # 3x3 only
+      - [4]        # 4x4 only
+      - [3, 4]     # 3x3 + 4x4
+      - [2, 3, 4]  # 2x2 + 3x3 + 4x4
+
+    enhancement:
+      - "none"
+      - "clahe"
+      - "sharpen"
+
+    threshold:
+      - null  # model default
+
+  # Maximum number of experiments to run (safety limit)
+  max_experiments: 500
+
+# --- Output Configuration ---
+output:
+  # Directory for experiment results
+  results_dir: "research/results"
+
+  # Save individual tile results for analysis
+  save_tile_results: true
+
+  # Save visualizations (annotated images with bounding boxes)
+  save_visualizations: false
+
+  # Export format for results
+  export_format: "csv"  # Options: csv, json, both
+
+  # Generate comparison plots
+  generate_plots: true
+
+# --- Logging ---
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_file: "research/results/experiment.log"
+  console_output: true
