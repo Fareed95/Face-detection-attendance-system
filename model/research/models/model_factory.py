@@ -267,9 +267,20 @@ class FaceRecognitionModel:
         return results
 
     def _is_match(self, distance: float) -> bool:
-        """Check if a distance value constitutes a match given the metric."""
+        """
+        Check if a distance value constitutes a match given the metric.
+
+        For cosine distance: distance = 1 - similarity.
+        Some models define thresholds as similarity (>0.5, e.g. ArcFace=0.68),
+        others as distance (<0.5, e.g. FaceNet=0.40).
+        When threshold > 0.5, it represents a similarity threshold, so we
+        convert it to a distance threshold via (1 - threshold).
+        When threshold <= 0.5, it is already a distance threshold.
+        """
         if self.distance_metric == "cosine":
-            return distance <= (1.0 - self.threshold) if self.threshold > 0.5 else distance <= self.threshold
+            # Convert similarity-style thresholds (>0.5) to distance thresholds
+            distance_threshold = (1.0 - self.threshold) if self.threshold > 0.5 else self.threshold
+            return distance <= distance_threshold
         else:
             return distance <= self.threshold
 
