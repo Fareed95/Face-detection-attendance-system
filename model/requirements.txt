@@ -72,3 +72,7 @@ uv==0.6.4
 Werkzeug==3.1.3
 wheel==0.45.1
 wrapt==1.17.2
+# Research framework dependencies
+PyYAML==6.0.2
+reportlab==4.4.0
+matplotlib==3.10.1
